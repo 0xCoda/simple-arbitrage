@@ -45,6 +45,9 @@ export class UniswappyV2EthPair extends EthMarket {
     return []
   }
 
+  // eg: get market pairs from a factory address (using ethereum RPC provider)
+  //    a factoryAddress is an ethereum market exchange contract addresses
+  //     each of these is a different fork of uniswap (or uniswap itself)
   static async getUniswappyMarkets(provider: providers.JsonRpcProvider, factoryAddress: string): Promise<Array<UniswappyV2EthPair>> {
     const uniswapQuery = new Contract(UNISWAP_LOOKUP_CONTRACT_ADDRESS, UNISWAP_QUERY_ABI, provider);
 
@@ -87,8 +90,14 @@ export class UniswappyV2EthPair extends EthMarket {
     return marketPairs
   }
 
+  // eg: use input provider to get market data from factory addresses (market exchange contract addresses)
   static async getUniswapMarketsByToken(provider: providers.JsonRpcProvider, factoryAddresses: Array<string>): Promise<GroupedMarkets> {
     const allPairs = await Promise.all(
+    
+      // eg: take all factory addresses from 'addresses.ts',
+      //  and in parrallel executues 'getUniswappyMarkets' for each factory address to our RPC provider
+      //    factoryAddresses are ethereum market exchange contract addresses ('addresses.ts')
+      //     each of these is a different fork of uniswap (or uniswap itself)
       _.map(factoryAddresses, factoryAddress => UniswappyV2EthPair.getUniswappyMarkets(provider, factoryAddress))
     )
 
