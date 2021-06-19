@@ -1,4 +1,6 @@
-// eg: ethereum market exchange contract addresses
+// ################################################################################################## //
+// eg: ethereum market exchange contract addresses ('Factories')
+//  thes are the markets we are looking for arbitratry opportunities on
 //  each of these is a different fork of uniswap (or uniswap itself)
 //  inside each of these contract source codes has a function that lets us get pairs: 'getPair or allPairs'
 //    test getting pairs (uniswap v2): https://etherscan.io/address/0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f#readContract
@@ -7,8 +9,15 @@
 //      - they have a 'factory contract' that will deploy a bunch of 'little contracts' that stand on their own
 //      - these 'little contracts' are what you are trading on
 //          its where you can find prices & data of different assets (not in the factory contract itself)
-//          an example of important data we need is trading 'pairs' (i.e. PAX-USDC)
+//          an example of important data we need is trading 'pairs' (i.e. PAX-USDC, or ETH-USDC)
 //      - test getting pairs (uniswap v2): https://etherscan.io/address/0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f#readContract
+//          example testing w/ 'allPairs'
+//              input (uint256): 1 = address w/ contract overview: Uniswap V2: PAX-USDC
+//              input (uint256): 0 = address w/ contract overview: Uniswap V2: USDC (i.e. just USDC = ETH-USDC)
+//      - v2 has ~44k pairs
+//          so instead of performing lookup functions one at a time, we do them in batches
+//            this is where the 'UniswapFlashQuery.sol' contract comes into play (made by scott)
+// ################################################################################################## //
 export const UNISWAP_LOOKUP_CONTRACT_ADDRESS = '0x5EF1009b9FCD4fec3094a5564047e190D72Bd511'
 export const WETH_ADDRESS = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
 export const SUSHISWAP_FACTORY_ADDRESS = '0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac';

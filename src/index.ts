@@ -80,7 +80,8 @@ async function main() {
     //      got all markets across different exchanges (narrowed down to 2k)
     //       'get the data'
 
-  // eg: 'evaluate the data' received, to understand what parameters will be executes 'on chain'
+  // eg: provider (Ethereum RPC) event handler (on new block)
+  //    'evaluate the data' received, to understand what parameters will be executes 'on chain'
   provider.on('block', async (blockNumber) => {
     await UniswappyV2EthPair.updateReserves(provider, markets.allMarketPairs);
     

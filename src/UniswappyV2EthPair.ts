@@ -49,8 +49,12 @@ export class UniswappyV2EthPair extends EthMarket {
   //    a factoryAddress is an ethereum market exchange contract addresses
   //     each of these is a different fork of uniswap (or uniswap itself)
   static async getUniswappyMarkets(provider: providers.JsonRpcProvider, factoryAddress: string): Promise<Array<UniswappyV2EthPair>> {
+    
+    // eg: initialize contract object (UniswapFlashQuery.sol) w/ ABI (abi.ts) and provider (Ethereum RPC URL)
     const uniswapQuery = new Contract(UNISWAP_LOOKUP_CONTRACT_ADDRESS, UNISWAP_QUERY_ABI, provider);
 
+    // eg: initialize array of market pairs that we will ultimately use and interact with
+    //  we will only add pairs that pass filtering in below for loop
     const marketPairs = new Array<UniswappyV2EthPair>()
     
     // eg: search all 'factories' (factories?)... factory contract addresses, i think
@@ -58,15 +62,19 @@ export class UniswappyV2EthPair extends EthMarket {
     //      ref: https://etherscan.io/address/0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f#readContract
     for (let i = 0; i < BATCH_COUNT_LIMIT * UNISWAP_BATCH_SIZE; i += UNISWAP_BATCH_SIZE) {
     
-      // eg: get pairs that are not ERC20 to ERC20
+      // eg: get batch of pairs by index range for designated factory (market exchange contract address)
+      //    invoke on chain contract 'UniswapFlashQuery.sol' (getPairsByIndexRange)
+      //    note: below we filter pairs with WETH (i.e. tokens paired w/ ether; since ERC20 to ERC20 likely doesn't have value)
       const pairs: Array<Array<string>> = (await uniswapQuery.functions.getPairsByIndexRange(factoryAddress, i, i + UNISWAP_BATCH_SIZE))[0];
+      
+      // eg: loop through batch of pairs received and deconstruct
+      //    get pair address, and pair token addresses (ref: UniswapFlashQuery.sol)
       for (let i = 0; i < pairs.length; i++) {
         const pair = pairs[i];
         const marketAddress = pair[2];
         let tokenAddress: string;
 
-        // eg: filter for only ETH in the pair
-        //      because we pay our cost in WETH
+        // eg: filter for only ETH in the pair, because we pay our cost in WETH
         //      (simpler to pay out of our profit types; less math to do)
         if (pair[0] === WETH_ADDRESS) {
           tokenAddress = pair[1]
@@ -76,7 +84,7 @@ export class UniswappyV2EthPair extends EthMarket {
           continue;
         }
         
-        // eg: check for blacklisted token
+        // eg: check for blacklisted token (if not, then append to marketPairs array)
         if (!blacklistTokens.includes(tokenAddress)) {
           const uniswappyV2EthPair = new UniswappyV2EthPair(marketAddress, [pair[0], pair[1]], "");
           marketPairs.push(uniswappyV2EthPair);
@@ -92,20 +100,24 @@ export class UniswappyV2EthPair extends EthMarket {
 
   // eg: use input provider to get market data from factory addresses (market exchange contract addresses)
   static async getUniswapMarketsByToken(provider: providers.JsonRpcProvider, factoryAddresses: Array<string>): Promise<GroupedMarkets> {
+    // eg: take all factory addresses from 'addresses.ts',
+    //  and in parrallel executues 'getUniswappyMarkets' for each factory address to our RPC provider
+    //    factoryAddresses are ethereum market exchange contract addresses ('addresses.ts')
+    //     each of these is a different fork of uniswap (or uniswap itself)
     const allPairs = await Promise.all(
-    
-      // eg: take all factory addresses from 'addresses.ts',
-      //  and in parrallel executues 'getUniswappyMarkets' for each factory address to our RPC provider
-      //    factoryAddresses are ethereum market exchange contract addresses ('addresses.ts')
-      //     each of these is a different fork of uniswap (or uniswap itself)
       _.map(factoryAddresses, factoryAddress => UniswappyV2EthPair.getUniswappyMarkets(provider, factoryAddress))
     )
 
+    // eg: NEED SCOTT VALIDATION (for this comment)
+    //  parse dictionary from market pairs array (received from on-chain; ref: UniswapFlashQuery.sol)
+    //  lambda functin in groupBy: organizes dict by token name (WETH)
     const marketsByTokenAll = _.chain(allPairs)
       .flatten()
       .groupBy(pair => pair.tokens[0] === WETH_ADDRESS ? pair.tokens[1] : pair.tokens[0])
       .value()
 
+    // eg: NEED SCOTT VALIDATION (for this comment)
+    //  sanity check, filter 'marketsByTokenAll' w/ lambda checking length of each dict
     const allMarketPairs = _.chain(
       _.pickBy(marketsByTokenAll, a => a.length > 1) // weird TS bug, chain'd pickBy is Partial<>
     )
@@ -113,6 +125,10 @@ export class UniswappyV2EthPair extends EthMarket {
       .flatten()
       .value()
 
+    // eg: update initial reserves (reserves?)
+    //  need continuous data for these pairs, 'every single block'
+    //   this function also invoked from index.ts on provider 'block' event handler
+    //  passing in provider (Ethereum RPC), so we can get the data
     await UniswappyV2EthPair.updateReserves(provider, allMarketPairs);
 
     const marketsByToken = _.chain(allMarketPairs)
@@ -126,10 +142,20 @@ export class UniswappyV2EthPair extends EthMarket {
     }
   }
 
+  // eg: updates reserves (reserves?)
+  //    invoked from index.ts on provider 'block' event handler
   static async updateReserves(provider: providers.JsonRpcProvider, allMarketPairs: Array<UniswappyV2EthPair>): Promise<void> {
+  
+    // eg: initialize contract object (UniswapFlashQuery.sol) w/ ABI (abi.ts) and provider (Ethereum RPC URL)
     const uniswapQuery = new Contract(UNISWAP_LOOKUP_CONTRACT_ADDRESS, UNISWAP_QUERY_ABI, provider);
+    
+    // eg: create simple object of all market pair 'addresses'
     const pairAddresses = allMarketPairs.map(marketPair => marketPair.marketAddress);
+    
+    // eg: print how many addresses we have
     console.log("Updating markets, count:", pairAddresses.length)
+    
+    // eg: 'this is where the magic happens for getting data'
     const reserves: Array<Array<BigNumber>> = (await uniswapQuery.functions.getReservesByPairs(pairAddresses))[0];
     for (let i = 0; i < allMarketPairs.length; i++) {
       const marketPair = allMarketPairs[i];
