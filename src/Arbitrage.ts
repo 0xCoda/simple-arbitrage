@@ -33,6 +33,9 @@ export function getBestCrossedMarket(crossedMarkets: Array<EthMarket>[], tokenAd
   for (const crossedMarket of crossedMarkets) {
     const sellToMarket = crossedMarket[0]
     const buyFromMarket = crossedMarket[1]
+    
+    // eg: check profits againts different markets (find best market)
+    //     using test volumes array
     for (const size of TEST_VOLUMES) {
       const tokensOutFromBuyingSize = buyFromMarket.getTokensOut(WETH_ADDRESS, tokenAddress, size);
       const proceedsFromSellingTokens = sellToMarket.getTokensOut(tokenAddress, WETH_ADDRESS, tokensOutFromBuyingSize)
@@ -105,6 +108,8 @@ export class Arbitrage {
       });
 
       const crossedMarkets = new Array<Array<EthMarket>>()
+      
+      // eg: check for arbitrage opportunity to take advantage of
       for (const pricedMarket of pricedMarkets) {
         _.forEach(pricedMarkets, pm => {
           if (pm.sellTokenPrice.gt(pricedMarket.buyTokenPrice)) {
@@ -122,6 +127,7 @@ export class Arbitrage {
     return bestCrossedMarkets
   }
 
+  // eg: do stuff with markets analyzed off chain
   // TODO: take more than 1
   async takeCrossedMarkets(bestCrossedMarkets: CrossedMarketDetails[], blockNumber: number, minerRewardPercentage: number): Promise<void> {
     for (const bestCrossedMarket of bestCrossedMarkets) {
@@ -155,6 +161,8 @@ export class Arbitrage {
         console.warn(`Estimate gas failure for ${JSON.stringify(bestCrossedMarket)}`)
         continue
       }
+      
+      // eg: transcations need to be executed all or non, and in-order
       const bundledTransactions = [
         {
           signer: this.executorWallet,
@@ -169,6 +177,8 @@ export class Arbitrage {
         console.log(`Simulation Error on token ${bestCrossedMarket.tokenAddress}, skipping`)
         continue
       }
+      
+      // eg: sending bundle 2 blocks into the future (because minors mine blocks really quickly)
       console.log(`Submitting bundle, profit sent to miner: ${bigNumberToDecimal(simulation.coinbaseDiff)}, effective gas price: ${bigNumberToDecimal(simulation.coinbaseDiff.div(simulation.totalGasUsed), 9)} GWEI`)
       const bundlePromises =  _.map([blockNumber + 1, blockNumber + 2], targetBlockNumber =>
         this.flashbotsProvider.sendRawBundle(

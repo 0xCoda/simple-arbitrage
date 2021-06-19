@@ -1,5 +1,8 @@
 import { BigNumber, Wallet } from "ethers";
 
+// eg: filter out pairs that are less than 1 ether
+//      (not worth it if less than 1 ether)
+//     using BigNumber for greater precision
 export const ETHER = BigNumber.from(10).pow(18);
 
 export function bigNumberToDecimal(value: BigNumber, base = 18): number {

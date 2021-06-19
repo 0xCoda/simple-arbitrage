@@ -49,13 +49,22 @@ export class UniswappyV2EthPair extends EthMarket {
     const uniswapQuery = new Contract(UNISWAP_LOOKUP_CONTRACT_ADDRESS, UNISWAP_QUERY_ABI, provider);
 
     const marketPairs = new Array<UniswappyV2EthPair>()
+    
+    // eg: search all 'factories' (factories?)... factory contract addresses, i think
+    //  i.e. uniswap v2: 0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f
+    //      ref: https://etherscan.io/address/0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f#readContract
     for (let i = 0; i < BATCH_COUNT_LIMIT * UNISWAP_BATCH_SIZE; i += UNISWAP_BATCH_SIZE) {
+    
+      // eg: get pairs that are not ERC20 to ERC20
       const pairs: Array<Array<string>> = (await uniswapQuery.functions.getPairsByIndexRange(factoryAddress, i, i + UNISWAP_BATCH_SIZE))[0];
       for (let i = 0; i < pairs.length; i++) {
         const pair = pairs[i];
         const marketAddress = pair[2];
         let tokenAddress: string;
 
+        // eg: filter for only ETH in the pair
+        //      because we pay our cost in WETH
+        //      (simpler to pay out of our profit types; less math to do)
         if (pair[0] === WETH_ADDRESS) {
           tokenAddress = pair[1]
         } else if (pair[1] === WETH_ADDRESS) {
@@ -63,6 +72,8 @@ export class UniswappyV2EthPair extends EthMarket {
         } else {
           continue;
         }
+        
+        // eg: check for blacklisted token
         if (!blacklistTokens.includes(tokenAddress)) {
           const uniswappyV2EthPair = new UniswappyV2EthPair(marketAddress, [pair[0], pair[1]], "");
           marketPairs.push(uniswappyV2EthPair);

@@ -53,6 +53,11 @@ async function main() {
     new Contract(BUNDLE_EXECUTOR_ADDRESS, BUNDLE_EXECUTOR_ABI, provider) )
 
   const markets = await UniswappyV2EthPair.getUniswapMarketsByToken(provider, FACTORY_ADDRESSES);
+    // eg: finish initial setup (get all pairs, etc. about 10k different calls)
+    //      got all markets across different exchanges (narrowed down to 2k)
+    //       'get the data'
+
+  // eg: 'evaluate the data' received, to understand what parameters will be executes 'on chain'
   provider.on('block', async (blockNumber) => {
     await UniswappyV2EthPair.updateReserves(provider, markets.allMarketPairs);
     const bestCrossedMarkets = await arbitrage.evaluateMarkets(markets.marketsByToken);
