@@ -23,6 +23,10 @@ interface GroupedMarkets {
 
 export class UniswappyV2EthPair extends EthMarket {
   static uniswapInterface = new Contract(WETH_ADDRESS, UNISWAP_PAIR_ABI);
+  
+  // eg: (ref: EthMarket.ts)
+  //  a list of all token addresses mapped to their current reserve balances,
+  //    for this 'EthMarket' object (factory address)
   private _tokenBalances: TokenBalances
 
   constructor(marketAddress: string, tokens: Array<string>, protocol: string) {
@@ -64,6 +68,8 @@ export class UniswappyV2EthPair extends EthMarket {
     
       // eg: get batch of pairs by index range for designated factory (market exchange contract address)
       //    invoke on chain contract 'UniswapFlashQuery.sol' (getPairsByIndexRange)
+      //    returns 2D array (batch of all pairs & tokens in these pairs, for this query)
+      //
       //    note: below we filter pairs with WETH (i.e. tokens paired w/ ether; since ERC20 to ERC20 likely doesn't have value)
       const pairs: Array<Array<string>> = (await uniswapQuery.functions.getPairsByIndexRange(factoryAddress, i, i + UNISWAP_BATCH_SIZE))[0];
       
@@ -84,7 +90,8 @@ export class UniswappyV2EthPair extends EthMarket {
           continue;
         }
         
-        // eg: check for blacklisted token (if not, then append to marketPairs array)
+        // eg: check for blacklisted token
+        //  if not, then create 'UniswappyV2EthPair' & append to marketPairs array
         if (!blacklistTokens.includes(tokenAddress)) {
           const uniswappyV2EthPair = new UniswappyV2EthPair(marketAddress, [pair[0], pair[1]], "");
           marketPairs.push(uniswappyV2EthPair);
@@ -100,6 +107,7 @@ export class UniswappyV2EthPair extends EthMarket {
 
   // eg: use input provider to get market data from factory addresses (market exchange contract addresses)
   static async getUniswapMarketsByToken(provider: providers.JsonRpcProvider, factoryAddresses: Array<string>): Promise<GroupedMarkets> {
+  
     // eg: take all factory addresses from 'addresses.ts',
     //  and in parrallel executues 'getUniswappyMarkets' for each factory address to our RPC provider
     //    factoryAddresses are ethereum market exchange contract addresses ('addresses.ts')
@@ -109,15 +117,15 @@ export class UniswappyV2EthPair extends EthMarket {
     )
 
     // eg: NEED SCOTT VALIDATION (for this comment)
-    //  parse dictionary from market pairs array (received from on-chain; ref: UniswapFlashQuery.sol)
-    //  lambda functin in groupBy: organizes dict by token name (WETH)
+    //  parse marketsByTokenAll dict from market pairs array (received from on-chain; ref: UniswapFlashQuery.sol)
+    //  lambda function in groupBy: organizes dict by token name (i.e. HEXWETH, not WETHHEX)
     const marketsByTokenAll = _.chain(allPairs)
       .flatten()
       .groupBy(pair => pair.tokens[0] === WETH_ADDRESS ? pair.tokens[1] : pair.tokens[0])
       .value()
 
     // eg: NEED SCOTT VALIDATION (for this comment)
-    //  sanity check, filter 'marketsByTokenAll' w/ lambda checking length of each dict
+    //  sanity check, w/ lambda checking length of each dict in marketsByTokenAll
     const allMarketPairs = _.chain(
       _.pickBy(marketsByTokenAll, a => a.length > 1) // weird TS bug, chain'd pickBy is Partial<>
     )
@@ -125,41 +133,64 @@ export class UniswappyV2EthPair extends EthMarket {
       .flatten()
       .value()
 
-    // eg: update initial reserves (reserves?)
-    //  need continuous data for these pairs, 'every single block'
-    //   this function also invoked from index.ts on provider 'block' event handler
+    // eg: update reserves (during this initial setup)
     //  passing in provider (Ethereum RPC), so we can get the data
     await UniswappyV2EthPair.updateReserves(provider, allMarketPairs);
+        // note: we need continuous data for these pairs ('every single block')
+        //  i.e. this function also invoked from index.ts on provider 'block' event handler
 
+    // eg: NEED SCOTT VALIDATION (for this comment)
+    //  parse marketsByToken dict from allMarketPairs (now updated w/ reserves from on-chain; ref: UniswapFlashQuery.sol)
+    //  lambda function in filter: filter out pairs that are less than 1 ether (ref: utils.ts)
+    //  lambda function in groupBy: organizes dict by token name (i.e. HEXWETH, not WETHHEX)
     const marketsByToken = _.chain(allMarketPairs)
       .filter(pair => (pair.getBalance(WETH_ADDRESS).gt(ETHER)))
       .groupBy(pair => pair.tokens[0] === WETH_ADDRESS ? pair.tokens[1] : pair.tokens[0])
       .value()
 
+    // eg: return marketsByToken dict & allMarketPairs dict
     return {
       marketsByToken,
       allMarketPairs
     }
   }
 
-  // eg: updates reserves (reserves?)
+  // eg: updates reserves (reserves? ref: https://uniswap.org/docs/v2/advanced-topics/pricing/)
+  //    a 'reserve' is the amount of tokens that are available for a pair
+  //        we need this to figure out the price of an asset
+  //    invoked from index.ts on initial setup, via 'getUniswapMarketsByToken' (above)
   //    invoked from index.ts on provider 'block' event handler
   static async updateReserves(provider: providers.JsonRpcProvider, allMarketPairs: Array<UniswappyV2EthPair>): Promise<void> {
   
     // eg: initialize contract object (UniswapFlashQuery.sol) w/ ABI (abi.ts) and provider (Ethereum RPC URL)
     const uniswapQuery = new Contract(UNISWAP_LOOKUP_CONTRACT_ADDRESS, UNISWAP_QUERY_ABI, provider);
     
-    // eg: create simple object of all market pair 'addresses'
+    // eg: parse out market pair addresses & create simple object
+    //  to invoke on-chain function for getting reserves
     const pairAddresses = allMarketPairs.map(marketPair => marketPair.marketAddress);
     
     // eg: print how many addresses we have
     console.log("Updating markets, count:", pairAddresses.length)
     
     // eg: 'this is where the magic happens for getting data'
+    //  invoke on-chain function to get reserves (UniswapFlashQuery.sol)
+    //  returns 2D array batch of all token pair reserves
+    //
+    //  note: indices in reserves array returned from on-chain, must stay in sync with allMarketPairs indices
+    //      i.e. the for loop (below) depends on this
     const reserves: Array<Array<BigNumber>> = (await uniswapQuery.functions.getReservesByPairs(pairAddresses))[0];
+    
+    // eg: loop through allMarketPairs, setting reserves for each market pair
     for (let i = 0; i < allMarketPairs.length; i++) {
       const marketPair = allMarketPairs[i];
       const reserve = reserves[i]
+      
+      // eg: compares new reserves receieved from on-chain, against old reservers stored in 'this._tokenBalances'
+      //    updates 'this._tokenBalances' if new reserves are different
+      //
+      //  note: (ref: EthMarket.ts)
+      //   'this._tokenBalances' is a list of all token addresses
+      //     mapped to their current reserve balances, for this EthMarket object (factory address)
       marketPair.setReservesViaOrderedBalances([reserve[0], reserve[1]])
     }
   }

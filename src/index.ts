@@ -82,6 +82,9 @@ async function main() {
 
   // eg: provider (Ethereum RPC) event handler (on new block)
   //    'evaluate the data' received, to understand what parameters will be executes 'on chain'
+  //
+  //    note: this bot is monitoring data from every new block
+  //        more effecient bots should monitor data from the mempool
   provider.on('block', async (blockNumber) => {
     await UniswappyV2EthPair.updateReserves(provider, markets.allMarketPairs);
     

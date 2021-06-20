@@ -17,11 +17,29 @@ abstract contract UniswapV2Factory  {
 
 // In order to quickly load up data from Uniswap-like market, this contract allows easy iteration with a single eth_call
 contract FlashBotsUniswapQuery {
+
+    // eg: get reserves for an asset pair (ref: https://uniswap.org/docs/v2/advanced-topics/pricing/)
+    //  a 'reserve' is the amount of tokens that are available for a pair
     function getReservesByPairs(IUniswapV2Pair[] calldata _pairs) external view returns (uint256[3][] memory) {
+    
+        // eg: initialize 'result' array of size '_pairs.length', to save and return pair addresses
+        //  allocate using 'memory' (ref: https://ethereum.stackexchange.com/a/1705)
+        //  allocate with 2D array... each primary index in array will store:
+        //      [0] 1st token reserves (uint112)
+        //      [1] 2nd token reserves (uint112)
+        //      [2] block.timestamp
         uint256[3][] memory result = new uint256[3][](_pairs.length);
+        
+        // eg: loop through all pair addresses, getting reserves for each token
         for (uint i = 0; i < _pairs.length; i++) {
+            
+            // eg: invoke IUniswapV2Pair function 'getReserves()' on this pair
+            //  ref: https://uniswap.org/docs/v2/smart-contracts/pair#getreserves
+            //  returns tuple of token0 reserves, token1 reserves, & block.timestamp
             (result[i][0], result[i][1], result[i][2]) = _pairs[i].getReserves();
         }
+        
+        // eg: return 2D array (batch of all token pair reserves)
         return result;
     }
 
