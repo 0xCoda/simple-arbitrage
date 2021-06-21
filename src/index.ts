@@ -76,9 +76,58 @@ async function main() {
   //    FACTORY_ADDRESSES are ethereum market exchange contract addresses ('addresses.ts')
   //     each of these is a different fork of uniswap (or uniswap itself)
   const markets = await UniswappyV2EthPair.getUniswapMarketsByToken(provider, FACTORY_ADDRESSES);
-    // eg: finish initial setup (get all pairs, etc. about 10k different calls)
+    // eg: finish initial setup ('get the data': get all pairs, etc. about 10k different calls)
     //      got all markets across different exchanges (narrowed down to 2k)
-    //       'get the data'
+
+    // eg: NEED ROBERT CONFIRMATION (for this comment)
+    /*  at this point, our 'markets' object is an array of UniswappyV2EthPair<EthMarket>
+            each containing...
+                'allMarketPairs'<Array of dicts>:
+                    each index contains..
+                        1 market pair address
+                        2 token addresss
+                        1 protocol
+                        2 token addresses & their reserve balances
+                        {
+                            '_marketAddress':<hex address>,
+                            '_tokens':[<hex address>,<hex address>],
+                            '_protocol':<empty string>,
+                            '_tokenBalances': {
+                                    <hex address>: {
+                                        'type':'BigNumber', 'hex':<hex string reserve balance>
+                                    },
+                                    <hex address>: {
+                                        'type':'BigNumber', 'hex':<hex string reserve balance>
+                                    }
+                        }
+                'marketsByToken'<Dictionary of array entries>:
+                    each key is a token address, containing array of pairs in each market found..
+                        [{
+                            '_marketAddress':<hex address>,
+                            '_tokens':[<hex address>,<hex address>],
+                            '_protocol':<empty string>,
+                            '_tokenBalances': {
+                                    <hex address>: {
+                                        'type':'BigNumber', 'hex':<hex string reserve balance>
+                                    },
+                                    <hex address>: {
+                                        'type':'BigNumber', 'hex':<hex string reserve balance>
+                                    }
+                        }, ... ]
+    */
+    /*
+    //DEBUG LOGGING...
+    console.log("\n\n ------------ PRINTING markets.allMarketPairs ------------")
+    for (let i = 0; i < markets.allMarketPairs.length; i++) {
+        console.log("\nPAIR["+i+"]:\n"+JSON.stringify(markets.allMarketPairs[i]))
+    }
+    console.log("\n\n ------------ PRINTING markets.marketsByToken ------------")
+    for (let key in markets.marketsByToken) {
+        console.log("\nTOKEN["+key+"]:\n"+JSON.stringify(markets.marketsByToken[key]))
+    }
+    */
+    
+          
 
   // eg: provider (Ethereum RPC) event handler (on new block)
   //    'evaluate the data' received, to understand what parameters will be executes 'on chain'
@@ -86,9 +135,12 @@ async function main() {
   //    note: this bot is monitoring data from every new block
   //        more effecient bots should monitor data from the mempool
   provider.on('block', async (blockNumber) => {
+  
+    // eg: update reserves on every new block event
+    //  need continuous data for these pairs ('every single block')
     await UniswappyV2EthPair.updateReserves(provider, markets.allMarketPairs);
     
-    // eg: use arb object to eval diff markets and keep pumping data into it for new blocks
+    // eg: use arbitrage object to eval diff markets and keep pumping data into it (from new blocks)
     const bestCrossedMarkets = await arbitrage.evaluateMarkets(markets.marketsByToken);
     if (bestCrossedMarkets.length === 0) {
       console.log("No crossed markets")

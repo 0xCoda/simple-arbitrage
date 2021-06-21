@@ -74,7 +74,7 @@ export class UniswappyV2EthPair extends EthMarket {
       const pairs: Array<Array<string>> = (await uniswapQuery.functions.getPairsByIndexRange(factoryAddress, i, i + UNISWAP_BATCH_SIZE))[0];
       
       // eg: loop through batch of pairs received and deconstruct
-      //    get pair address, and pair token addresses (ref: UniswapFlashQuery.sol)
+      //    get pair address, and pair market addresses (ref: UniswapFlashQuery.sol)
       for (let i = 0; i < pairs.length; i++) {
         const pair = pairs[i];
         const marketAddress = pair[2];
@@ -82,6 +82,7 @@ export class UniswappyV2EthPair extends EthMarket {
 
         // eg: filter for only ETH in the pair, because we pay our cost in WETH
         //      (simpler to pay out of our profit types; less math to do)
+        //  set 'tokenAddress' of the token that is NOT weth (to be validated against blacklist below)
         if (pair[0] === WETH_ADDRESS) {
           tokenAddress = pair[1]
         } else if (pair[1] === WETH_ADDRESS) {
@@ -116,15 +117,15 @@ export class UniswappyV2EthPair extends EthMarket {
       _.map(factoryAddresses, factoryAddress => UniswappyV2EthPair.getUniswappyMarkets(provider, factoryAddress))
     )
 
-    // eg: NEED SCOTT VALIDATION (for this comment)
+    // eg: NEED SCOTT CONFIRMATION (for this comment)
     //  parse marketsByTokenAll dict from market pairs array (received from on-chain; ref: UniswapFlashQuery.sol)
-    //  lambda function in groupBy: organizes dict by token name (i.e. HEXWETH, not WETHHEX)
+    //  lambda function in groupBy: organizes dict by non-WETH token name (i.e. for HEX-WETH, organize by HEX)
     const marketsByTokenAll = _.chain(allPairs)
       .flatten()
       .groupBy(pair => pair.tokens[0] === WETH_ADDRESS ? pair.tokens[1] : pair.tokens[0])
       .value()
 
-    // eg: NEED SCOTT VALIDATION (for this comment)
+    // eg: NEED SCOTT CONFIRMATION (for this comment)
     //  sanity check, w/ lambda checking length of each dict in marketsByTokenAll
     const allMarketPairs = _.chain(
       _.pickBy(marketsByTokenAll, a => a.length > 1) // weird TS bug, chain'd pickBy is Partial<>
@@ -135,11 +136,12 @@ export class UniswappyV2EthPair extends EthMarket {
 
     // eg: update reserves (during this initial setup)
     //  passing in provider (Ethereum RPC), so we can get the data
+    //
+    //  note: we need continuous data for these pairs ('every single block')
+    //      i.e. this function also invoked from index.ts on provider 'block' event handler
     await UniswappyV2EthPair.updateReserves(provider, allMarketPairs);
-        // note: we need continuous data for these pairs ('every single block')
-        //  i.e. this function also invoked from index.ts on provider 'block' event handler
 
-    // eg: NEED SCOTT VALIDATION (for this comment)
+    // eg: NEED SCOTT CONFIRMATION (for this comment)
     //  parse marketsByToken dict from allMarketPairs (now updated w/ reserves from on-chain; ref: UniswapFlashQuery.sol)
     //  lambda function in filter: filter out pairs that are less than 1 ether (ref: utils.ts)
     //  lambda function in groupBy: organizes dict by token name (i.e. HEXWETH, not WETHHEX)
@@ -192,6 +194,11 @@ export class UniswappyV2EthPair extends EthMarket {
       //   'this._tokenBalances' is a list of all token addresses
       //     mapped to their current reserve balances, for this EthMarket object (factory address)
       marketPair.setReservesViaOrderedBalances([reserve[0], reserve[1]])
+            
+            // eg: NEED ROBERT CONFIRMATION (for this comment)
+            //  at this point, our marketPair object (UniswappyV2EthPair<EthMarket>) should contain..
+            //      2 token addresses & their reserve balances
+            //      1 market pair address
     }
   }
 

@@ -93,11 +93,16 @@ export class Arbitrage {
     )
   }
 
-
+  // eg: traverse through marketsByToken to return array of best crossed markets
   async evaluateMarkets(marketsByToken: MarketsByToken): Promise<Array<CrossedMarketDetails>> {
+  
+    // eg: initialize array of CrossedMarketDetails
     const bestCrossedMarkets = new Array<CrossedMarketDetails>()
 
+    // eg: loop through all token addresses in marketsByToken
     for (const tokenAddress in marketsByToken) {
+
+      // eg: get markets array for this token address
       const markets = marketsByToken[tokenAddress]
       const pricedMarkets = _.map(markets, (ethMarket: EthMarket) => {
         return {
