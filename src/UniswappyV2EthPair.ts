@@ -67,7 +67,9 @@ export class UniswappyV2EthPair extends EthMarket {
     for (let i = 0; i < BATCH_COUNT_LIMIT * UNISWAP_BATCH_SIZE; i += UNISWAP_BATCH_SIZE) {
     
       // eg: get batch of pairs by index range for designated factory (market exchange contract address)
-      //    invoke on chain contract 'UniswapFlashQuery.sol' (getPairsByIndexRange)
+      //    invoke on-chain contract 'UniswapFlashQuery.sol' (getPairsByIndexRange)
+      //      note: etherproject 'Contract.functions.METHOD_NAME' invokes read-only (view) functions on-chain immediately
+      //      ref: https://docs.ethers.io/v5/api/contract/contract/#Contract-functionsCall
       //    returns 2D array (batch of all pairs & tokens in these pairs, for this query)
       //
       //    note: below we filter pairs with WETH (i.e. tokens paired w/ ether; since ERC20 to ERC20 likely doesn't have value)
@@ -119,7 +121,7 @@ export class UniswappyV2EthPair extends EthMarket {
 
     // eg: NEED SCOTT CONFIRMATION (for this comment)
     //  parse marketsByTokenAll dict from market pairs array (received from on-chain; ref: UniswapFlashQuery.sol)
-    //  lambda function in groupBy: organizes dict by non-WETH token name (i.e. for HEX-WETH, organize by HEX)
+    //  lambda function in groupBy: organizes dict by non-WETH token name (i.e. for PAX-WETH, organize by PAX)
     const marketsByTokenAll = _.chain(allPairs)
       .flatten()
       .groupBy(pair => pair.tokens[0] === WETH_ADDRESS ? pair.tokens[1] : pair.tokens[0])
@@ -143,8 +145,8 @@ export class UniswappyV2EthPair extends EthMarket {
 
     // eg: NEED SCOTT CONFIRMATION (for this comment)
     //  parse marketsByToken dict from allMarketPairs (now updated w/ reserves from on-chain; ref: UniswapFlashQuery.sol)
-    //  lambda function in filter: filter out pairs that are less than 1 ether (ref: utils.ts)
-    //  lambda function in groupBy: organizes dict by token name (i.e. HEXWETH, not WETHHEX)
+    //  lambda func in filter: filter out pairs that are greater than 1 ether gt(ETHER) (ref: utils.ts)
+    //  lambda func in groupBy: organizes dict by token name (i.e. PAX-WETH, dict key is PAX address)
     const marketsByToken = _.chain(allMarketPairs)
       .filter(pair => (pair.getBalance(WETH_ADDRESS).gt(ETHER)))
       .groupBy(pair => pair.tokens[0] === WETH_ADDRESS ? pair.tokens[1] : pair.tokens[0])
@@ -176,6 +178,8 @@ export class UniswappyV2EthPair extends EthMarket {
     
     // eg: 'this is where the magic happens for getting data'
     //  invoke on-chain function to get reserves (UniswapFlashQuery.sol)
+    //    note: etherproject 'Contract.functions.METHOD_NAME' invokes read-only (view) functions on-chain immediately
+    //    ref: https://docs.ethers.io/v5/api/contract/contract/#Contract-functionsCall
     //  returns 2D array batch of all token pair reserves
     //
     //  note: indices in reserves array returned from on-chain, must stay in sync with allMarketPairs indices
@@ -197,8 +201,10 @@ export class UniswappyV2EthPair extends EthMarket {
             
             // eg: NEED ROBERT CONFIRMATION (for this comment)
             //  at this point, our marketPair object (UniswappyV2EthPair<EthMarket>) should contain..
-            //      2 token addresses & their reserve balances
-            //      1 market pair address
+            //    1 market pair address
+            //    2 token addresss
+            //    1 protocol
+            //    2 token addresses & their reserve balances
     }
   }
 
@@ -219,12 +225,16 @@ export class UniswappyV2EthPair extends EthMarket {
     }
   }
 
+  // eg: get # of tokenIn tokens needed to put in,
+  //    if want to receive # of (amountOut) tokenOut tokens (includes UniswapV2 0.3% fee)
   getTokensIn(tokenIn: string, tokenOut: string, amountOut: BigNumber): BigNumber {
     const reserveIn = this._tokenBalances[tokenIn]
     const reserveOut = this._tokenBalances[tokenOut]
     return this.getAmountIn(reserveIn, reserveOut, amountOut);
   }
 
+  // eg: get # of tokenOut tokens received,
+  //    if put in # of (amountIn) tokenIn tokens (includes UniswapV2 0.3% fee)
   getTokensOut(tokenIn: string, tokenOut: string, amountIn: BigNumber): BigNumber {
     const reserveIn = this._tokenBalances[tokenIn]
     const reserveOut = this._tokenBalances[tokenOut]
@@ -245,6 +255,9 @@ export class UniswappyV2EthPair extends EthMarket {
   }
 
   async sellTokensToNextMarket(tokenIn: string, amountIn: BigNumber, ethMarket: EthMarket): Promise<MultipleCallData> {
+  
+    // eg: sanity check
+    //  make sure tokenIn param passed is actually in 'this._tokenBalances' array
     if (ethMarket.receiveDirectly(tokenIn) === true) {
       const exchangeCall = await this.sellTokens(tokenIn, amountIn, ethMarket.marketAddress)
       return {
@@ -253,6 +266,14 @@ export class UniswappyV2EthPair extends EthMarket {
       }
     }
 
+    // eg: NEED ROBERT CLARIFICATION
+    //  why is this code executed regardless of the above 'if' statement (it's exactly the same)
+    //
+    //  ROBERT answer (via discord 'botcmiller#4207'):
+    //    that check was made so that simple-arb could be extended to non-v2 markets
+    //    uniswap v2 "receiveDirectly" is always true
+    //    for other markets it isn't, e.g. you need to do an approval and transferFrom for those
+    //    but yeah as is that is always true
     const exchangeCall = await this.sellTokens(tokenIn, amountIn, ethMarket.marketAddress)
     return {
       data: [exchangeCall],
@@ -265,15 +286,47 @@ export class UniswappyV2EthPair extends EthMarket {
     let amount0Out = BigNumber.from(0)
     let amount1Out = BigNumber.from(0)
     let tokenOut: string;
+    
+    // eg: IF address of tokenIn is equal to index 0 of this market's token list,
+    //      THEN set 'tokenOut' to index 1 and amount1Out to WETH volume received
+    //     ELSE set 'tokenOut' to index 0 and set amount1Out to non-WETH volume received
+    //
+    // note: 'getUniswapMarketsByToken' organizes pairs by non-WETH (i.e. PAX-WETH; non-WETH first)
+    //      this.tokens[0] = non-WETH_ADDRESS
+    //      this.tokens[1] = WETH_ADDRESS
     if (tokenIn === this.tokens[0]) {
+    // eg: if 'tokenIn' param is non-WETH_ADDRESS,
+    
+      // eg: set tokenOut = WETH_ADDRESS
       tokenOut = this.tokens[1]
+      
+      // eg: get # of WETH received, for 'amountIn' # of non-WETH put in
+      //    note: 'amount0Out' remains 0
       amount1Out = this.getTokensOut(tokenIn, tokenOut, amountIn)
+
     } else if (tokenIn === this.tokens[1]) {
+    // eg: if 'tokenIn' param is WETH_ADDRESS,
+    
+      // eg: set tokenOut = non-WETH_ADDRESS
       tokenOut = this.tokens[0]
+      
+      // eg: get # of non-WETH received, for 'amountIn' # of WETH put in
+      //    note: 'amount1Out' remains 0
       amount0Out = this.getTokensOut(tokenIn, tokenOut, amountIn)
     } else {
+      
+      // eg: 'tokenIn' address param not found in this.tokens
       throw new Error("Bad token input address")
     }
+    
+    // eg: create uniswap v2 low-level 'flash swap' transaction
+    //  note: last param ([] = nil data) tells the contract to assume that payment has already been received
+    //   this will be different for integrating flash loans
+    //      ref: https://uniswap.org/docs/v2/smart-contract-integration/using-flash-swaps/
+    // return byte data for this transcation (to sign & submit to network later for market pair address contract)
+    //
+    //  note: etherproject 'Contract.populateTransaction.METHOD_NAME' returns a 'representation' of an unsigned transaction
+    //    it does not invoke the function on-chain immediately (you can then use the 'data' in byte form to sign & submit later)
     const populatedTransaction = await UniswappyV2EthPair.uniswapInterface.populateTransaction.swap(amount0Out, amount1Out, recipient, []);
     if (populatedTransaction === undefined || populatedTransaction.data === undefined) throw new Error("HI")
     return populatedTransaction.data;

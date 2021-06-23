@@ -115,6 +115,7 @@ async function main() {
                                     }
                         }, ... ]
     */
+
     /*
     //DEBUG LOGGING...
     console.log("\n\n ------------ PRINTING markets.allMarketPairs ------------")
@@ -126,8 +127,6 @@ async function main() {
         console.log("\nTOKEN["+key+"]:\n"+JSON.stringify(markets.marketsByToken[key]))
     }
     */
-    
-          
 
   // eg: provider (Ethereum RPC) event handler (on new block)
   //    'evaluate the data' received, to understand what parameters will be executes 'on chain'
@@ -146,6 +145,8 @@ async function main() {
       console.log("No crossed markets")
       return
     }
+    
+    // eg: print all best pairs of markets to swap for profit 
     bestCrossedMarkets.forEach(Arbitrage.printCrossedMarket);
     arbitrage.takeCrossedMarkets(bestCrossedMarkets, blockNumber, MINER_REWARD_PERCENTAGE).then(healthcheck).catch(console.error)
   })
