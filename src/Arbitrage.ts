@@ -28,7 +28,7 @@ const TEST_VOLUMES = [
   ETHER.mul(10),
 ]
 
-// eg: traverse through all pairs of markets w/ sell price > by price (for this token)
+// eg: traverse through all pairs of markets w/ sell price > buy price (for this token)
 //    find the best pair of markets to swap with, and add to 'bestCrossedMarkets'
 //
 // note: should read and review 'An Analysis of Uniswap markets'
